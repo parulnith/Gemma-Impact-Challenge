@@ -1,4 +1,4 @@
-# ASHA Form Digitizer & Hindi Voice Transcriber
+# ASHA Form Digitizer & Hindi Voice Transcriber (Gemma 3n Powered)
 
 **Empowering ASHA workers with AI for seamless form digitization and Hindi voice transcription**
 
@@ -9,21 +9,45 @@
 
 ## 🌟 Project Overview
 
-This project leverages **Google's Gemma 3n 4B model** to create an AI-powered solution that helps [ASHA](https://nhm.gov.in/index1.php?lang=1&level=1&sublinkid=150&lid=226) (Accredited Social Health Activist) workers in rural India digitize handwritten forms and transcribe Hindi voice input. The application addresses critical challenges in rural healthcare data management by making form processing faster, more accurate, and accessible even for those with limited digital literacy.
+This project leverages **Google's Gemma 3n 4B model** to create an AI-powered solution that helps [ASHA](https://nhm.gov.in/index1.php?lang=1&level=1&sublinkid=150&lid=226) - **Accredited Social Health Activist** workers in rural India digitize forms and transcribe Hindi voice input. The application  addresses critical challenges in rural healthcare data management by making form processing faster, more accurate, and accessible even for those with limited digital literacy.
 
+## ✨ Highlights & Gemma 3n Capabilities
+
+**This project is a showcase of Gemma 3n's advanced multimodal AI capabilities, designed for real-world social impact:**
+
+1. **Multimodal AI**: Combines vision (image understanding), audio (speech-to-text), and language (text processing) in a single workflow using Gemma 3n 4B.
+2. **Vision Intelligence**: Uses Gemma 3n's vision model to detect and extract handwritten form fields from images, enabling digitization of paper forms.
+3. **Audio & Speech**: Leverages Gemma 3n's audio pipeline for accurate Hindi voice transcription, converting spoken input to Devanagari script in real time.
+4. **Multilingual Support**: Gemma 3n enables robust form field recognition and voice transcription in Hindi and other languages, making the tool accessible to diverse users.
+5. **On-Device, Private AI**: All inference runs locally after model download—no internet required, ensuring privacy and accessibility in rural settings.
+6. **Real-World Impact**: Directly addresses challenges faced by ASHA workers, healthcare admins, and researchers in rural India.
+7. **Scalable, Modular Design**: Built for easy extension and adaptation to new forms, languages, and use cases.
+
+> **Gemma 3n powers the entire pipeline: from image to structured data, from voice to text, and across languages.**
+
+---
+
+**🔗 Submission Links for Judges:**
+
+
+---
+
+**🔗 Submission Links:**
+
+- 📄 **Writeup:** [View Writeup](#) <!-- Replace # with your writeup link -->
+- 🎥 **Demo Video:** [Watch Video](#) <!-- Replace # with your video link -->
+- 🚀 **Live Demo:** [Try the Application](https://huggingface.co/spaces/ParulPandey/demo)
+
+---
 ### 🎯 Key Features
 ![](images/Architecture.png)
 
-- **🔍 Intelligent Form Field Extraction**: Upload photos of handwritten forms and automatically extract all field labels using Gemma 3n's vision capabilities
+- **🔍 Intelligent Form Field Extraction**: Upload photos of forms and automatically extract all field labels using Gemma 3n's vision capabilities
 - **🎤 Hindi Voice Transcription**: Fill form fields by speaking in Hindi - the AI provides instant, accurate Devanagari script transcription
 - **💻 Fully On-Device Processing**: Runs completely offline once the Gemma 3n model is downloaded - no internet required for inference
 - **💾 Smart Caching System**: Reduces processing time by intelligently caching extraction results
 - **📊 CSV Export**: All submitted data is automatically saved in structured CSV format for analysis
 - **🏗️ Modular Architecture**: Clean, maintainable code with separated concerns for scalability
-
-## 🚀 Demo
-
-Try the live application: [Demo](https://huggingface.co/spaces/ParulPandey/demo)
 
 ### 🔧 Usage
 
@@ -52,75 +76,20 @@ Try the live application: [Demo](https://huggingface.co/spaces/ParulPandey/demo)
 - **Framework**: Python 3.11+ with PyTorch
 - **UI**: Gradio for web interface
 
-### Architecture
-
-```
-app.py                    # Main Gradio application
-├── utils/
-│   ├── model_handler.py     # Gemma 3n model management
-│   ├── image_processor.py   # Image preprocessing pipeline
-│   ├── cache_manager.py     # Intelligent caching system
-│   ├── output_parser.py     # AI response parsing
-│   └── logger.py           # Professional logging
-├── samples/                 # Demo form images
-└── requirements.txt        # Dependencies
-```
-
-### Key Components
-
-1. **ModelHandler**: Manages Gemma 3n model loading, inference, and optimization
-2. **ImageProcessor**: Handles image preprocessing with intelligent resizing
-3. **CacheManager**: Implements smart caching for performance optimization
-4. **OutputParser**: Robust parsing of AI responses with fallback strategies
-
-
-
-
-## 🧠 Gemma 3n Integration
-
-This project showcases use of **Google's Gemma 3n 4B model**:
-
-### Vision Tasks
-- Form field detection and extraction
-
-### Language Tasks 
--  
-- Hindi voice-to-text transcription
-- Multilingual 
-
 
 ## 🏥 Impact & Use Cases
 
-### Primary Users
-- **ASHA Workers**: Frontline health workers in rural India
-- **Healthcare Administrators**: Data collection and analysis teams
-- **Public Health Researchers**: Community health data analysts
-
-### Real-World Applications
 - **Patient Registration**: Digitize handwritten patient intake forms
-- **Health Surveys**: Convert paper-based community health assessments
-- **Vaccination Records**: Streamline immunization data entry
-- **Medical History**: Digitize patient medical record forms
-
 
 ## 🚀 Performance Optimizations
-
-- **Smart Caching**: Avoids reprocessing identical forms
-- **CPU Optimization**: Efficient inference on resource-constrained devices
 - **Memory Management**: Intelligent model loading and unloading
 - **Progressive UI**: Real-time progress indicators for better UX
 
 
 
-### Highlights
-
-1. **Multimodal AI Application**: Combines vision and language capabilities of Gemma 3n
 2. **Real-World Problem Solving**: Addresses actual challenges faced by ASHA workers
 3. **Accessibility Focus**: Hindi voice input for better user adoption
 4. **Performance Optimization**: CPU-friendly implementation for resource constraints
-5. **Scalable Architecture**: Modular design enables easy feature expansion
-
-
 
 
 
@@ -138,21 +107,12 @@ This project showcases use of **Google's Gemma 3n 4B model**:
 
 - Python 3.11 or higher
 - Hugging Face account and token
-
-### Quick Start
-
 1. **Clone the repository**
    ```bash
    git clone [your-repo-url]
-   cd asha-form-digitizer
-   ```
 
 2. **Install dependencies**
    ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Set up Hugging Face token**
    ```bash
    # Create .env file
    echo "HF_TOKEN=your_hugging_face_token_here" > .env
