@@ -2,9 +2,6 @@ import sys
 import platform
 import re
 import os
-
-# Add current directory to Python path for utils module
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import json
 import time
 import hashlib
@@ -27,8 +24,8 @@ from huggingface_hub import HfApi
 
 # --- Configuration ---
 GEMMA_MODEL_ID = "google/gemma-3n-E4B-it"
-CACHE_FILE = "/tmp/image_cache.pkl"
-AUDIO_CACHE_FILE = "/tmp/audio_cache.pkl"
+CACHE_FILE = "image_cache.pkl"
+AUDIO_CACHE_FILE = "audio_cache.pkl"
 
 # --- Cache Loading ---
 def load_cache(file_path):
@@ -42,9 +39,8 @@ def load_cache(file_path):
             print(f"[Cache] Could not load cache from {file_path}: {e}")
     return {}
 
-# Legacy cache variables - now handled by modular CacheManager
-image_cache = {}  # Kept for backward compatibility
-audio_cache = {}  # Kept for backward compatibility
+image_cache = load_cache(CACHE_FILE)
+audio_cache = load_cache(AUDIO_CACHE_FILE)
 
 # --- Hugging Face Token & Network Check ---
 load_dotenv()
@@ -60,22 +56,43 @@ def check_network_connectivity():
     except requests.ConnectionError:
         return False
 
-# Legacy support for backward compatibility
+# --- Global Model Variables ---
 processor = None
 model = None
 device = torch.device("cpu")
 
 def load_model_with_fallback():
-    """Legacy function - now uses modular ModelHandler"""
-    global processor, model
+    """Loads the Gemma model, handling offline mode and caching."""
+    global processor, model, device
     
-    # Use modular model handler
-    success = model_handler.load_model()
-    if success:
-        model = model_handler.model
-        processor = model_handler.processor
+    if model and model != "cached": return True
+    
+    print("Loading model on CPU...")
+    cache_dir = os.path.expanduser("~/.cache/huggingface/hub")
+    model_cache_path = os.path.join(cache_dir, f"models--{GEMMA_MODEL_ID.replace('/', '--')}")
+    
+    is_cached = os.path.exists(model_cache_path)
+    has_network = check_network_connectivity()
+    use_offline = is_cached and not has_network
+    
+    if use_offline:
+        print("Network unavailable. Using offline mode with cached model.")
+        os.environ["TRANSFORMERS_OFFLINE"] = "1"
+            
+    try:
+        processor = AutoProcessor.from_pretrained(GEMMA_MODEL_ID, token=hf_token, local_files_only=use_offline)
+        model = AutoModelForImageTextToText.from_pretrained(
+            GEMMA_MODEL_ID,
+            torch_dtype=torch.float32,
+            low_cpu_mem_usage=True,
+            token=hf_token,
+            local_files_only=use_offline
+        ).to(device).eval()
+        print(f"Gemma model loaded successfully.")
         return True
-    return False
+    except Exception as e:
+        print(f"CRITICAL: Model loading failed: {e}", file=sys.stderr)
+        return False
 
 
 # --- Utility Functions ---
@@ -98,8 +115,8 @@ class TokenStreamHandler(TextStreamer):
             self.progress_callback(0.95)
 
 def get_image_hash(image_path):
-    """Legacy function - now uses modular ImageProcessor"""
-    return image_processor.get_image_hash(image_path)
+    if not image_path or not os.path.exists(image_path): return None
+    with open(image_path, "rb") as f: return hashlib.md5(f.read()).hexdigest()
 
 def get_audio_hash(audio_data):
     if isinstance(audio_data, tuple) and len(audio_data) == 2:
@@ -107,7 +124,7 @@ def get_audio_hash(audio_data):
         return hashlib.md5(audio_np_array.tobytes() + str(sr).encode()).hexdigest()
     return None
 
-def save_to_csv(data, csv_path="/tmp/forms.csv"):
+def save_to_csv(data, csv_path="output/forms.csv"):
     """Saves form data to a CSV file in long format."""
     try:
         os.makedirs(os.path.dirname(csv_path), exist_ok=True)
@@ -125,314 +142,333 @@ def save_to_csv(data, csv_path="/tmp/forms.csv"):
         raise gr.Error(f"Failed to save to CSV: {e}")
 
 # =============================================================================
-# MODULAR AI PROCESSING 
+# CORE AI PROCESSING FUNCTIONS - Main logic for form field extraction
 # =============================================================================
-
-# Import modular components
-from utils import ImageProcessor, OutputParser, CacheManager, ModelHandler, get_logger
-
-# Initialize modular components
-image_processor = ImageProcessor(max_size=512)
-output_parser = OutputParser()
-cache_manager = CacheManager()
-model_handler = ModelHandler()
-logger = get_logger("ExtractionEngine")
 
 def extract_fields_from_image(image_path, progress=None):
     """
-    Main extraction function - Modular architecture with separated concerns
+    Main extraction function - Extracts form field labels from images using Gemma 3n 4B
     
-    This function orchestrates multiple specialized components:
-    1. ImageProcessor: Handles image loading and preprocessing
-    2. CacheManager: Manages intelligent caching for performance
-    3. ModelHandler: Manages model loading and inference
-    4. OutputParser: Parses AI responses using multiple strategies
-    5. Logger: Provides consistent, professional logging
+    This is the core AI function that:
+    1. Loads and preprocesses form images (photos of paper forms)
+    2. Uses Google's Gemma 3n vision-language model to identify field labels
+    3. Parses the AI output to extract clean field names
+    4. Caches results to avoid re-processing the same image
     
     Args:
         image_path (str): Path to uploaded form image
         progress (callable): Gradio progress callback for UI updates
         
     Returns:
-        list: Clean list of extracted field names
+        list: Clean list of extracted field names (e.g., ["Name", "Age", "Village"])
         
-    Architecture: Modular, testable, maintainable senior-level code
+    Performance: 30-60 seconds on CPU for 4B model
     """
-    # Initialize extraction process
-    logger.section_start("FORM_FIELD_EXTRACTION", 
-                        f"Processing: {os.path.basename(image_path) if image_path else 'Unknown'}")
+    global model, processor, device
+    start_time = time.time()
     
+    # Console logging for monitoring AI processing pipeline
+    print(f"\n{'='*60}")
+    print(f"[EXTRACTION START] Processing: {os.path.basename(image_path) if image_path else 'None'}")
+    print(f"[EXTRACTION START] Timestamp: {time.strftime('%H:%M:%S')}")
+    print(f"[EXTRACTION START] Using Gemma 3n 4B Vision-Language Model")
+    print(f"{'='*60}")
+    
+    # Lazy loading: Load model only when first needed
+    if model == "cached":
+        print("[Model] Loading Gemma 3n 4B model on first use...")
+        if not load_model_with_fallback():
+            return ["[Error] Failed to load model on first use."]
+
     if progress:
-        progress(0.05, desc="Starting extraction pipeline...")
+        progress(0.05, desc="Starting image processing...")
+    print("[Status] AI extraction pipeline initialized")
+
+    # Smart caching: Check if we've processed this exact image before
+    print("[Cache] Checking for previously processed results...")
+    image_hash = get_image_hash(image_path)
+    print(f"[Cache] Image hash: {image_hash[:12] if image_hash else 'None'}...")
     
-    # Step 1: Image preprocessing with modular component
-    logger.step(1, "Image preprocessing", "starting")
-    processed_image, image_hash, img_metadata = image_processor.preprocess(image_path)
-    
-    if processed_image is None:
-        logger.error("Image preprocessing failed", img_metadata.get('error', 'Unknown error'))
-        return []
-    
-    logger.success("Image preprocessed successfully", 
-                  f"Size: {img_metadata['original_size']} -> {img_metadata['processed_size']}")
-    
-    if progress:
-        progress(0.15, desc="Checking cache...")
-    
-    # Step 2: Smart caching check
-    logger.step(2, "Cache lookup", "checking")
-    cached_fields = cache_manager.get_image_extraction(image_hash)
-    
-    if cached_fields:
-        logger.cache_event("hit", f"Found {len(cached_fields)} cached fields")
+    if image_hash in image_cache:
+        cached_fields = image_cache[image_hash]
+        elapsed = time.time() - start_time
+        print(f"[Cache] CACHE HIT! Found {len(cached_fields)} pre-extracted fields in {elapsed:.2f}s")
+        print(f"[Cache] Cached fields: {cached_fields}")
         if progress:
             for p in [0.3, 0.6, 0.9, 1.0]:
                 progress(p, desc="Using cached results...")
                 time.sleep(0.05)
-        
-        logger.section_end("FORM_FIELD_EXTRACTION", True, 
-                          f"Returned {len(cached_fields)} cached fields")
         return cached_fields
-    
-    logger.cache_event("miss", "No cached results found, proceeding with AI extraction")
-    
-    if progress:
-        progress(0.25, desc="Loading AI model...")
-    
-    # Step 3: Model loading and validation
-    logger.step(3, "AI model initialization", "loading")
-    if not model_handler.load_model():
-        logger.error("Model loading failed")
-        return ["[Error] Failed to load AI model"]
-    
-    logger.model_event("loaded", "Gemma 3n 4B ready for inference")
-    
-    if progress:
-        progress(0.40, desc="Running AI inference...")
-    
-    # Step 4: AI inference with engineered prompt
-    logger.step(4, "AI inference", "running")
-    prompt = "<image_soft_token> Extract all form field labels from this image. Return ONLY a JSON object where keys are field names and values are 'text'. For Hindi/Devanagari forms, preserve the original script. Do NOT include any introductory or concluding text."
-    
+
+    print("[Cache] New image detected - proceeding with fresh extraction...")
+
+    # Image preprocessing: Load and validate the uploaded form image
+    print("[Image] Loading and validating uploaded form...")
     try:
-        ai_response, inference_metadata = model_handler.generate_response(
-            processed_image, 
-            prompt,
-            generation_config={
-                'max_new_tokens': 600,
-                'do_sample': True,
-                'num_beams': 3,
-                'repetition_penalty': 1.2,
-                'length_penalty': 1.0,
-                'early_stopping': True,
-            }
-
-        )
-        
-        logger.performance("AI inference", inference_metadata['generation_time'],
-                         {'total_tokens': 600, 'device': inference_metadata['device']})
-        
+        image = Image.open(image_path).convert("RGB")
+        print(f"[Image] Successfully loaded! Original dimensions: {image.size}")
     except Exception as e:
-        logger.error("AI inference failed", str(e))
+        print(f"[Image] Failed to load image: {e}")
         return []
-    
+
     if progress:
-        progress(0.80, desc="Parsing AI response...")
-    
-    # Step 5: Intelligent output parsing
-    logger.step(5, "Output parsing", "analyzing")
-    text_result = ai_response
-    import re, json
+        progress(0.15, desc="Optimizing image for processing...")
 
-    def extract_all_json(text):
-        jsons = []
-        stack = []
-        start = None
-        for i, c in enumerate(text):
-            if c == '{':
-                if not stack:
-                    start = i
-                stack.append('{')
-            elif c == '}':
-                if stack:
-                    stack.pop()
-                    if not stack and start is not None:
-                        candidate = text[start:i+1]
-                        try:
-                            obj = json.loads(candidate)
-                            jsons.append(obj)
-                        except Exception:
-                            pass
-                        start = None
-        return jsons
-
-    json_objs = extract_all_json(text_result)
-    largest_json = None
-    max_fields = 0
-    if json_objs:
-        for obj in json_objs:
-            def flatten_json(json_obj, parent_key=''):
-                flat = {}
-                for key, value in json_obj.items():
-                    if isinstance(value, dict):
-                        if "type" in value:
-                            flat[key] = value["type"]
-                        else:
-                            nested_flat = flatten_json(value, f"{parent_key}{key}_")
-                            flat.update(nested_flat)
-                    else:
-                        flat[key] = value
-                return flat
-            flat = flatten_json(obj)
-            if len(flat) > max_fields:
-                largest_json = flat
-                max_fields = len(flat)
-        if largest_json:
-            extracted_fields = list(largest_json.keys())
-        else:
-            extracted_fields = []
+    # Smart resizing: Balance quality vs speed for CPU processing
+    original_size = image.size
+    max_size = 1024
+    if image.width > max_size or image.height > max_size:
+        print(f"[Image] Resizing from {image.size} to fit {max_size}px...")
+        image.thumbnail((max_size, max_size), Image.Resampling.BICUBIC)
+        print(f"[Image] Optimized to: {image.size}")
     else:
-        # Fallback: extract lines with colon
-        lines = [line.strip() for line in text_result.split('\n') if line.strip()]
-        fields = []
-        for line in lines:
-            if ':' in line:
-                parts = line.split(':', 1)
-                field_name = parts[0].strip()
-                if field_name and len(field_name) < 50:
-                    fields.append(field_name)
-        if not fields:
-            for idx, line in enumerate(lines):
-                if len(line) < 50:
-                    fields.append(f"field_{idx+1}")
-        extracted_fields = fields
+        print(f"[Image] Size acceptable, keeping: {image.size}")
 
-    # Step 6: Cache successful results
-    if extracted_fields and image_hash:
-        logger.step(6, "Result caching", "saving")
-        cache_manager.cache_image_extraction(
-            image_hash,
-            extracted_fields,
-            {
-                'extraction_method': "robust_json",
-                'inference_time': inference_metadata['generation_time'],
-                'image_metadata': img_metadata
-            }
+    if progress:
+        progress(0.25, desc="Preparing prompt...")
+
+    # Prompt engineering: Carefully crafted prompt for multilingual form extraction
+    prompt = (
+    "<image_soft_token> Extract ALL possible form field labels from this image. "
+    "Return ONLY a JSON object where each key is a field name and each value is 'text'. "
+    "For Hindi/Devanagari forms, preserve the original script. "
+    "Do NOT include any introductory or concluding text. "
+    "If a field is partially visible, still include it. "
+    "Sample output: {\"ग्राम\": \"text\", \"उपकेन्द्र\": \"text\", \"आयु\": \"text\", \"लिंग\": \"text\", ...}"
+    )
+    #prompt = "<image_soft_token> Extract all the form field labels from this image. Return ONLY a JSON object where keys are field names and values are 'text'. For Hindi/Devanagari forms, preserve the original script. Do NOT include any introductory or concluding text."
+    print(f"[Prompt] Using engineered prompt: {prompt[:80]}...")
+
+
+    if progress:
+        progress(0.35, desc="Tokenizing inputs...")
+
+    # Tokenization: Convert image and text to model input format
+    print("[Tokenizer] Converting image and text to neural network format...")
+    tokenize_start = time.time()
+    inputs = processor(images=image, text=prompt, return_tensors="pt")
+    inputs = {k: v.to(model.device) if hasattr(v, 'to') else v for k, v in inputs.items()}
+    tokenize_time = time.time() - tokenize_start
+    print(f"[Tokenizer] Tokenization completed in {tokenize_time:.2f}s")
+    print(f"[Tokenizer] Input shapes: {', '.join([f'{k}: {v.shape}' for k, v in inputs.items() if hasattr(v, 'shape')])}")
+
+    if progress:
+        progress(0.50, desc="Running AI model (CPU processing)...")
+
+    # Model inference: Run Gemma 3n 4B on the form image
+    print("[Model] Starting Gemma 3n 4B inference...")
+    print("[Model] CPU Processing: Expected time 30-60 seconds")
+    generation_start = time.time()
+    
+    with torch.no_grad():
+        outputs = model.generate(
+            **inputs,
+            max_new_tokens=128,      # Optimized for CPU speed
+            do_sample=False,         # Deterministic output
+            num_beams=1,            # Single beam for efficiency
+            temperature=0.1,         # Low temperature for consistency
+            repetition_penalty=1.1,  # Prevent repetition
+            length_penalty=1.0,
+            early_stopping=True,
+            pad_token_id=processor.tokenizer.eos_token_id
         )
+    
+    generation_time = time.time() - generation_start
+    print(f"[Model] Inference complete! Processing time: {generation_time:.2f}s")
 
-    logger.section_end("FORM_FIELD_EXTRACTION", len(extracted_fields) > 0, f"Extracted {len(extracted_fields)} fields")
+    # Output decoding: Convert model output back to readable text
+    print("[Decoder] Converting model output to text...")
+    decode_start = time.time()
+    text = processor.batch_decode(outputs, skip_special_tokens=True)[0]
+    decode_time = time.time() - decode_start
+    print(f"[Decoder] Decoding completed in {decode_time:.3f}s")
+    print(f"[Output] Raw AI response preview: {text[:200]}...")
+
+    # JSON parsing: Extract structured field names from AI response
+    print("[Parser] Analyzing AI response for field data...")
+    fields = []
+    json_match = re.search(r"{.*}", text, re.DOTALL)
+    json_str = None
+    
+    if json_match:
+        json_str = json_match.group(0)
+        print(f"[Parser] Found JSON structure: {json_str[:100]}...")
+        try:
+            parsed_json = json.loads(json_str)
+            print(f"[Parser] JSON parsed successfully, {len(parsed_json)} field definitions found")
+            
+            # Handle nested JSON structures
+            def flatten_json(json_obj):
+                """Recursively flatten JSON to extract field names"""
+                flat = {}
+                for k, v in json_obj.items():
+                    if isinstance(v, dict) and "type" in v:
+                        flat[k] = v["type"]
+                    elif isinstance(v, dict):
+                        flat.update(flatten_json(v))
+                    else:
+                        flat[k] = v
+                return flat
+            
+            flat_json = flatten_json(parsed_json)
+            fields = list(flat_json.keys())
+            print(f"[Parser] Extracted {len(fields)} fields: {fields}")
+        except Exception as e:
+            print(f"[Parser] JSON parsing failed: {e}")
+    else:
+        print("[Parser] No JSON structure detected in output")
+
+    # Fallback extraction: Use regex patterns if JSON parsing fails
+    if not fields:
+        print("[Fallback] Using regex-based field extraction...")
+        lines = [line.strip() for line in text.split('\n') if line.strip()]
+        numbered_pattern = re.compile(r'^\s*(\d+)[\.|\)]?\s*(.+?)(?:\s*[:：](.*))?$')
+        fallback_fields = []
+        
+        for i, line in enumerate(lines):
+            # Skip instructional text from AI
+            if "extract" in line.lower() or "json" in line.lower() or "example" in line.lower():
+                continue
+                
+            field_name = None
+            match = numbered_pattern.match(line)
+            if match:
+                raw_field = match.group(2).strip()
+                field_name = raw_field.rstrip(':：')
+            elif ":" in line:
+                field_name = line.split(":", 1)[0].strip()
+                
+            # Quality filter for reasonable field names
+            if field_name and 2 < len(field_name) < 50:
+                fallback_fields.append(field_name)
+                print(f"[Fallback] Line {i+1}: '{line}' -> '{field_name}'")
+        
+        fields = fallback_fields
+        print(f"[Fallback] Extracted {len(fields)} fields using pattern matching")
+
+    # Final processing: Clean up results
+    clean_fields = [f.strip() for f in fields if f.strip()]
+    total_time = time.time() - start_time
+    
+    # Results summary
+    print(f"\n[RESULT] Successfully extracted {len(clean_fields)} form fields:")
+    for i, field in enumerate(clean_fields, 1):
+        print(f"[RESULT]   {i}. {field}")
+    
+    # Cache results for future use
+    if image_hash and clean_fields:
+        print(f"[Cache] Saving {len(clean_fields)} extracted fields to cache...")
+        image_cache[image_hash] = clean_fields
+        with open(CACHE_FILE, "wb") as f:
+            pickle.dump(image_cache, f)
+        print("[Cache] Results cached successfully")
+
+    # Performance summary
+    print(f"\n{'='*60}")
+    print(f"[EXTRACTION COMPLETE] Total time: {total_time:.2f}s")
+    print(f"[EXTRACTION COMPLETE] Status: {'SUCCESS' if len(clean_fields) > 0 else 'NO FIELDS FOUND'}")
+    print(f"[EXTRACTION COMPLETE] Ready for digital form filling")
+    print(f"{'='*60}\n")
+
     if progress:
         progress(1.0, desc="Extraction complete")
-    return extracted_fields
+    return clean_fields
 
 def transcribe_audio(audio_data, progress=gr.Progress()):
-    """Modular audio transcription using specialized components"""
-    audio_logger = get_logger("AudioTranscription")
-    
+    """Fast audio transcription using Gemma for STT with caching"""
+    global model, processor, device, audio_cache
     if progress:
         progress(0.05, desc="Starting audio transcription...")
-    
-    # Step 1: Validate input
-    if audio_data is None:
-        audio_logger.error("No audio data provided")
-        return "[Error] No audio provided."
-    
-    # Step 2: Check cache
     audio_hash = get_audio_hash(audio_data)
-    if audio_hash:
-        cached_result = cache_manager.get_audio_transcription(audio_hash)
-        if cached_result:
-            audio_logger.cache_event("hit", f"Found cached transcription")
-            if progress:
-                progress(1.0, desc="Using cached transcription!")
-            return cached_result
-    
-    audio_logger.cache_event("miss", "No cached transcription found")
-    
-    if progress:
-        progress(0.2, desc="Loading AI model...")
-    
-    # Step 3: Ensure model is loaded
-    if not model_handler.load_model():
-        audio_logger.error("Failed to load model for transcription")
-        return "[Error] Failed to load AI model."
-    
-    if progress:
-        progress(0.4, desc="Processing audio...")
-    
-    # Step 4: Process audio data
-    try:
-        if isinstance(audio_data, str):
-            audio_np_array, sr = sf.read(audio_data)
-        elif isinstance(audio_data, tuple) and len(audio_data) == 2:
-            sr, audio_np_array = audio_data
-        else:
-            audio_logger.error("Invalid audio format")
-            return "[Error] Invalid audio input format."
-        
-        if audio_np_array is None or len(audio_np_array) == 0:
-            audio_logger.error("Empty audio data")
-            return "[Error] Empty audio data."
-        
-        # Audio preprocessing
-        if audio_np_array.ndim > 1:
-            audio_np_array = np.mean(audio_np_array, axis=1)
-        
-        if np.max(np.abs(audio_np_array)) > 0:
-            audio_np_array = audio_np_array / (np.max(np.abs(audio_np_array)) + 1e-9)
-        
-        # Resample if needed
-        target_sr = 16000
-        if sr != target_sr:
-            ratio = target_sr / sr
-            new_length = int(len(audio_np_array) * ratio)
-            audio_np_array = np.interp(
-                np.linspace(0, len(audio_np_array), new_length),
-                np.arange(len(audio_np_array)),
-                audio_np_array
-            )
-            sr = target_sr
-        
-        audio_logger.success("Audio preprocessing completed", f"Sample rate: {sr}, Length: {len(audio_np_array)}")
-        
-    except Exception as e:
-        audio_logger.error("Audio preprocessing failed", str(e))
-        return "[Error] Audio processing failed."
-    
-    if progress:
-        progress(0.6, desc="Running AI transcription...")
-    
-    # Step 5: Run transcription using modular model handler
-    try:
-        transcription, trans_metadata = model_handler.transcribe_audio(
-            (sr, audio_np_array),
-            "Transcribe this audio in Hindi (Devanagari script)."
+    if audio_hash and audio_hash in audio_cache:
+        cached_result = audio_cache[audio_hash]
+        if progress:
+            progress(1.0, desc="Transcription complete!")
+        return cached_result
+    if model == "cached":
+        if not load_model_with_fallback():
+            return "[Error] Failed to load Gemma model on first use."
+    if model is None or processor is None:
+        return "[Error] Gemma model or processor not loaded properly."
+    if audio_data is None:
+        return "[Error] No audio provided."
+    # manage_memory()  # Uncomment if you have a manage_memory function
+    audio_np_array, sr = (None, None)
+    if isinstance(audio_data, str):
+        audio_np_array, sr = sf.read(audio_data)
+    elif isinstance(audio_data, tuple) and len(audio_data) == 2:
+        sr, audio_np_array = audio_data
+    else:
+        return "[Error] Invalid audio input format."
+    if audio_np_array is None or len(audio_np_array) == 0:
+        return "[Error] Empty audio data."
+    if audio_np_array.ndim > 1:
+        audio_np_array = np.mean(audio_np_array, axis=1)
+    if np.max(np.abs(audio_np_array)) > 0:
+        audio_np_array = audio_np_array / (np.max(np.abs(audio_np_array)) + 1e-9)
+    target_sr = 16000
+    if sr != target_sr:
+        ratio = target_sr / sr
+        new_length = int(len(audio_np_array) * ratio)
+        audio_np_array = np.interp(
+            np.linspace(0, len(audio_np_array), new_length),
+            np.arange(len(audio_np_array)),
+            audio_np_array
         )
-        
-        audio_logger.performance("Audio transcription", trans_metadata['generation_time'])
-        
-    except Exception as e:
-        audio_logger.error("Transcription failed", str(e))
-        return "[Error] Transcription failed."
-    
+        sr = target_sr
+    prompt = "Transcribe this audio in Hindi (Devanagari script)."
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "audio", "audio": audio_np_array},
+                {"type": "text", "text": prompt}
+            ]
+        }
+    ]
     if progress:
-        progress(0.9, desc="Caching results...")
-    
-    # Step 6: Cache successful transcription
-    if audio_hash and transcription and transcription != "Audio not clear.":
-        cache_success = cache_manager.cache_audio_transcription(
-            audio_hash, 
-            transcription,
-            {'transcription_time': trans_metadata['generation_time']}
+        progress(0.2, desc="Tokenizing audio and prompt...")
+    input_dict = processor.apply_chat_template(
+        messages,
+        add_generation_prompt=True,
+        tokenize=True,
+        return_dict=True,
+        return_tensors="pt",
+        sampling_rate=sr
+    )
+    final_inputs_for_model = {k: v.to(model.device) for k, v in input_dict.items()}
+    if progress:
+        progress(0.6, desc="Generating transcription...")
+    with torch.inference_mode():
+        predicted_ids = model.generate(
+            **final_inputs_for_model,
+            max_new_tokens=32,  # Lowered for faster short-form transcription
+            do_sample=False,
+            num_beams=1
         )
-        
-        if cache_success:
-            audio_logger.cache_event("save", "Transcription cached for future use")
-    
+    if progress:
+        progress(0.9, desc="Decoding transcription...")
+    transcription = processor.batch_decode(
+        predicted_ids,
+        skip_special_tokens=True
+    )[0].strip()
+    # Remove any 'user:' or 'model:' tokens anywhere in the output
+    transcription = re.sub(r'\b(user|model)\s*[:：\-]+', '', transcription, flags=re.IGNORECASE)
+    # Remove standalone 'user' or 'model' words (with or without surrounding whitespace)
+    transcription = re.sub(r'\b(user|model)\b', '', transcription, flags=re.IGNORECASE)
+    # Remove the prompt text anywhere in the output (not just at the start)
+    prompt_text = "Transcribe this audio in Hindi (Devanagari script)."
+    transcription = transcription.replace(prompt_text, '')
+    # Remove extra whitespace and leading/trailing punctuation
+    transcription = transcription.strip(' :\n\t-')
+    if not transcription or transcription.strip() == "":
+        transcription = "Audio not clear."
+    if audio_hash and transcription:
+        audio_cache[audio_hash] = transcription
+        with open(AUDIO_CACHE_FILE, "wb") as f:
+            pickle.dump(audio_cache, f)
     if progress:
         progress(1.0, desc="Transcription complete!")
-    
-    audio_logger.success("Transcription completed", f"Result: {transcription[:50]}...")
     return transcription
 
 # --- Gradio UI ---
@@ -535,24 +571,26 @@ def main_ui():
                 with gr.Column(elem_classes=["asha-section"]):
                     gr.Markdown(
                         """
-# ASHA Form Digitizer & Hindi Voice Transcriber
+# ON DEVICE SMART ASHA Form 
+### **Digitizing rural health, empowering ASHA workers with AI.**
 
-**Digitizing rural health, empowering ASHA workers with AI.**
+This application is designed to help **ASHA (Accredited Social Health Activist) workers**—the backbone of India's rural healthcare system—quickly digitize handwritten forms and transcribe Hindi voice input. ASHA workers are often the first point of contact for healthcare in villages, but their work is slowed by manual paperwork and language barriers. This tool streamlines their workflow, making data entry faster, more accurate, and accessible even for those more comfortable with Hindi speech than typing.
 
-<p style='font-size:1.08rem; color:#263238; margin-bottom:1.2em;'>
-This application is designed to help <b>ASHA (Accredited Social Health Activist) workers</b>—the backbone of India's rural healthcare system—quickly digitize handwritten forms and transcribe Hindi voice input. ASHA workers are often the first point of contact for healthcare in villages, but their work is slowed by manual paperwork and language barriers. This tool streamlines their workflow, making data entry faster, more accurate, and accessible even for those more comfortable with Hindi speech than typing.
-</p>
-<ul class='asha-list'>
-    <li><b>Image-based field extraction:</b> Upload a photo of an ASHA form and the app will automatically detect and extract all field labels, ready for digital entry.</li>
-    <li><b>Hindi voice transcription:</b> Fill any field by speaking in Hindi (Devanagari script) for instant, accurate transcription.</li>
-    <li><b>Data export:</b> All submitted data is saved in a CSV for further use or analysis.</li>
-</ul>
-<div class='asha-note'>
-    <b>Why this matters:</b> ASHA workers serve over 900 million people in rural India, often with limited digital literacy and resources. By making form digitization and voice transcription seamless, this app saves time, reduces errors, and helps bring rural health data into the digital age—empowering both workers and the communities they serve.
-</div>
-<div class='asha-note' style='color:#1a237e; font-size:1.05rem; margin-top:0.5em;'>
-    <b>Note</b> While you are reading this, the <b>Gemma 3n model</b> is being loaded in the background to ensure a smooth and fast demo experience. Please explore each step—the workflow is strictly gated for demo clarity. All features are designed for real-world usability and hackathon evaluation.
-</div>
+- **Image-based field extraction:** Upload a photo of an ASHA form and the app will automatically detect and extract all field labels, ready for digital entry.  
+- **Hindi voice transcription:** Fill any field by speaking in Hindi (Devanagari script) for instant, accurate transcription.  
+- **Data export:** All submitted data is saved in a CSV for further use or analysis.  
+
+## Powered by Gemma-3n-4B 
+This demo runs on the **Gemma 3n 4B model**, a lightweight yet capable model for on-device AI tasks like image-to-text and Hindi speech transcription.  
+
+## On-device CPU Loading
+Since this application runs entirely **on-device using CPU**, the model takes some time to **load the first time**. After the initial load, processing is smooth and does not require an internet connection.
+
+## Why this matters
+ASHA workers serve over 900 million people in rural India, often with limited digital literacy and resources. By making form digitization and voice transcription seamless, this app saves time, reduces errors, and helps bring rural health data into the digital age—empowering both workers and the communities they serve.
+
+*Note:*
+While you are reading this, the **Gemma 3n model** is being loaded in the background to ensure a smooth and fast demo experience. Please explore each step—the workflow is strictly gated for demo clarity. All features are designed for real-world usability and hackathon evaluation.
                         """,
                         elem_id="asha_about"
                     )

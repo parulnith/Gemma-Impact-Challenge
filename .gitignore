@@ -1,0 +1,58 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pdb
+*.egg-info/
+*.egg
+*.env
+.env
+venv/
+ENV/
+.env.*
+
+# Jupyter
+.ipynb_checkpoints/
+
+# VS Code
+.vscode/
+
+# macOS
+.DS_Store
+
+.env
+
+# Data & Cache
+*.csv
+*.pkl
+*.pickle
+*.log
+*.sqlite3
+*.db
+image_cache.pkl
+audio_cache.pkl
+output/
+
+# Gradio
+*.gradio/
+
+# Others
+*.bak
+*.tmp
+*.swp
+*.swo
+*.orig
+*.old
+*.out
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.tiff
+*.webp
+
+# Ignore sample images if needed
+samples/
