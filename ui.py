@@ -23,7 +23,6 @@ Dependencies:
 - config: Configuration and utilities
 - model_utils: Model management
 
-Author: ASHA Form Digitization Team
 """
 
 import gradio as gr
