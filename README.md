@@ -93,30 +93,6 @@ Here's how the main files and modules work together in the new modular design:
 This modular design keeps the codebase clean, maintainable, and easy to extend.
 
 
-## 🏥 Impact & Use Cases
-
-- **Patient Registration**: Digitize handwritten patient intake forms
-
-## 🚀 Performance Optimizations
-- **Memory Management**: Intelligent model loading and unloading
-- **Progressive UI**: Real-time progress indicators for better UX
-
-
-
-2. **Real-World Problem Solving**: Addresses actual challenges faced by ASHA workers
-3. **Accessibility Focus**: Hindi voice input for better user adoption
-4. **Performance Optimization**: CPU-friendly implementation for resource constraints
-
-
-
-
-
-
-
-
-
-
-
 ## 📋 Installation & Setup
 
 ### Prerequisites

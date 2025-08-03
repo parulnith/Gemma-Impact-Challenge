@@ -1,4 +1,31 @@
-# Gradio UI and callback logic for the ASHA form app
+"""
+Gradio User Interface Module for ASHA Form Application
+
+This module contains the complete Gradio UI implementation for the ASHA form
+digitization application, including all user interaction logic and styling.
+
+Key Features:
+- Sample form gallery with click-to-use functionality
+- Three-tab workflow: Upload → Extract → Audio Input
+- Tab gating to ensure proper sequence of operations
+- Professional Apple-like styling with sky blue theme
+- Real-time progress tracking and error handling
+
+UI Components:
+- Tab 1: Sample gallery and image upload
+- Tab 2: Field extraction results and editing
+- Tab 3: Audio recording and transcription
+- Export functionality for CSV download
+
+Dependencies:
+- gradio: Web UI framework
+- ai_processing: Core AI functions
+- config: Configuration and utilities
+- model_utils: Model management
+
+Author: ASHA Form Digitization Team
+"""
+
 import gradio as gr
 from ai_processing import extract_fields_from_image, transcribe_audio
 from config import save_to_csv, image_cache, audio_cache, cache_file, audio_cache_file
@@ -9,8 +36,28 @@ from model_utils import load_model  # Use load_model instead of load_model_with_
 MAX_FIELDS = 20
 
 
-# Main function to build the Gradio UI
 def main_ui():
+    """
+    Create and configure the main Gradio user interface.
+    
+    This function builds the complete three-tab interface for the ASHA form application:
+    1. Sample Gallery & Upload: Browse sample forms and upload new images
+    2. Field Extraction: AI-powered field extraction with manual editing
+    3. Audio Input: Record audio responses and generate CSV export
+    
+    Features:
+    - Professional Apple-like styling with sky blue theme
+    - Tab gating to ensure proper workflow sequence
+    - Sample gallery with click-to-use functionality
+    - Real-time progress tracking for AI operations
+    - Error handling and user feedback
+    
+    Returns:
+        gr.Blocks: Configured Gradio interface ready for launch
+        
+    UI Flow:
+    Upload → Extract Fields → Record Audio → Export CSV
+    """
     with gr.Blocks(theme=gr.themes.Soft(), css="""
     /* Apple-like system font stack */
     .gradio-container {
