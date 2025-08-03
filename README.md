@@ -68,27 +68,27 @@ This project leverages **Google's Gemma 3n 4B model** to create an AI-powered so
 - **Form Recognition**: Multi-language form field detection
 
 
+
 ## 📂 Project Structure & File Roles
 
-Here's how the main files and modules work together:
+Here's how the main files and modules work together in the new modular design:
 
-- **app.py**: The main entry point. Launches the Gradio UI, handles user interactions, and coordinates all processing.
-- **utils/model_handler.py**: Loads and manages the Gemma 3n model. Handles all inference requests from `app.py` (for both vision and audio tasks).
-- **utils/image_processor.py**: Preprocesses uploaded images (resizing, normalization, etc.) before sending them to the model for field extraction.
-- **utils/cache_manager.py**: Implements smart caching. Stores and retrieves results of previous extractions to speed up repeated tasks.
-- **utils/output_parser.py**: Parses and structures the raw output from the model into usable form fields and values for the UI.
-- **utils/logger.py**: Handles logging of key events, errors, and user actions for debugging and monitoring.
+- **main.py**: The main entry point. Launches the Gradio UI and starts the application.
+- **ui.py**: Builds the Gradio user interface, manages workflow, and wires up all user interactions and callbacks.
+- **ai_processing.py**: Contains core AI logic for image field extraction and Hindi audio transcription using the Gemma model.
+- **model_utils.py**: Loads and manages the Gemma 3n model, handles offline mode, and network checks.
+- **config.py**: Handles configuration, environment variables, cache loading, and CSV export.
 - **samples/**: Contains sample form images for demo/testing.
 - **requirements.txt**: Lists all Python dependencies.
 
 **How they interact:**
 
-1. `app.py` receives an image or audio input from the user via the Gradio UI.
-2. The image is sent to `image_processor.py` for preprocessing.
-3. Preprocessed data is passed to `model_handler.py`, which runs inference using Gemma 3n.
-4. The output is parsed by `output_parser.py` to extract structured fields/values.
-5. Results are cached by `cache_manager.py` for faster future access.
-6. All major actions and errors are logged by `logger.py`.
+1. `main.py` launches the Gradio UI via `ui.py`.
+2. The UI guides the user through uploading images/audio and filling forms.
+3. Image and audio inputs are processed by functions in `ai_processing.py`.
+4. Model loading and network logic are handled by `model_utils.py`.
+5. Configuration, cache, and CSV export are managed by `config.py`.
+6. All results and data are cached for efficiency and saved for future use.
 
 This modular design keeps the codebase clean, maintainable, and easy to extend.
 
@@ -125,7 +125,7 @@ This modular design keeps the codebase clean, maintainable, and easy to extend.
 - Hugging Face account and token
 1. **Clone the repository**
    ```bash
-   git clone [your-repo-url]
+   git clone https://github.com/parulnith/Gemma-Impact-Challenge
 
 2. **Install dependencies**
    ```bash
@@ -134,9 +134,10 @@ This modular design keeps the codebase clean, maintainable, and easy to extend.
    echo "HF_TOKEN=your_hugging_face_token_here" > .env
    ```
 
+
 4. **Run the application**
    ```bash
-   python app.py
+   python main.py
    ```
 
 5. **Access the interface**
@@ -151,7 +152,4 @@ HF_TOKEN=your_hugging_face_token_here
 ```
 
 
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
