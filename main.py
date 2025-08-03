@@ -17,8 +17,6 @@ Usage:
 The application will start a Gradio web interface accessible at:
 http://localhost:7860
 
-Author: Gemma Impact Challenge Team
-License: MIT
 """
 
 from ui import main_ui
