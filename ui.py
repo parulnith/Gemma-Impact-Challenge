@@ -6,7 +6,7 @@ from model_utils import load_model  # Use load_model instead of load_model_with_
 
 
 # Maximum number of form fields supported
-MAX_FIELDS = 15
+MAX_FIELDS = 20
 
 
 # Main function to build the Gradio UI
