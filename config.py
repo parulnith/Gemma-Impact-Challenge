@@ -10,10 +10,6 @@ Key Components:
 - CSV export functionality for form data
 - File I/O utilities
 
-Dependencies:
-- pandas: For CSV data manipulation
-- pickle: For cache serialization
-- dotenv: For environment variable management
 """
 
 import os
