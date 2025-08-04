@@ -143,12 +143,13 @@ def extract_fields_from_image(image_path, progress=None):
         
     # Carefully crafted prompt for field extraction
     prompt = (
-        "<image_soft_token> Extract ALL possible form field labels from this image. "
-        "Return ONLY a JSON object where each key is a field name and each value is 'text'. "
-        "For Hindi/Devanagari forms, preserve the original script. "
-        "Do NOT include any introductory or concluding text. "
-        "If a field is partially visible, still include it. "
-        "Sample output: {\"ग्राम\": \"text\", \"उपकेन्द्र\": \"text\", \"आयु\": \"text\", \"लिंग\": \"text\", ...}"
+        "<image_soft_token> Carefully examine this form image and extract ALL visible form field labels, including partially visible ones. "
+        "Return ONLY a complete JSON object where each key is a field name and each value is 'text'. "
+        "For Hindi/Devanagari forms, preserve the original script exactly. "
+        "Include every single field label you can see, even if it's cut off or partially visible. "
+        "Do NOT include any introductory text, explanations, or conclusions. "
+        "Extract ALL fields - aim for 15-25 fields if they exist in the image. "
+        "Sample format: {\"ग्राम\": \"text\", \"उपकेन्द्र\": \"text\", \"आयु\": \"text\", \"लिंग\": \"text\", \"नाम\": \"text\", \"पता\": \"text\", \"मोबाइल\": \"text\", ...}"
     )
     
     # Process image and text through the model
@@ -159,7 +160,7 @@ def extract_fields_from_image(image_path, progress=None):
     with torch.no_grad():
         outputs = model.generate(
             **inputs,
-            max_new_tokens=128,        # Limit output length for efficiency
+            max_new_tokens=256,        # Increased limit for more comprehensive extraction
             do_sample=False,           # Deterministic output
             num_beams=1,              # Single beam for speed
             repetition_penalty=1.1,   # Prevent repetitive output
@@ -179,17 +180,39 @@ def extract_fields_from_image(image_path, progress=None):
         except Exception:
             pass
     
-    # Fallback parsing if JSON extraction fails
-    if not fields:
+    # Enhanced fallback parsing if JSON extraction fails or incomplete
+    if not fields or len(fields) < 10:  # If we got too few fields, try alternative parsing
+        # Try to find quoted field names
+        quoted_fields = re.findall(r'"([^"]+)":\s*"text"', text, re.IGNORECASE)
+        if quoted_fields:
+            fields.extend(quoted_fields)
+        
+        # Try to find fields in colon format
         lines = [line.strip() for line in text.split('\n') if line.strip()]
         for line in lines:
             if ":" in line:
-                field_name = line.split(":", 1)[0].strip()
+                field_name = line.split(":", 1)[0].strip().strip('"')
                 if 2 < len(field_name) < 50:  # Reasonable field name length
                     fields.append(field_name)
+        
+        # Try to find fields separated by commas
+        comma_fields = re.findall(r'"([^"]+)"', text)
+        for field in comma_fields:
+            if 2 < len(field) < 50 and field not in ['text', 'label', 'field']:
+                fields.append(field)
     
-    # Clean and cache results
-    clean_fields = [f.strip() for f in fields if f.strip()]
+    # Clean and cache results - remove duplicates while preserving order
+    seen = set()
+    clean_fields = []
+    for field in fields:
+        field_clean = field.strip()
+        if field_clean and field_clean not in seen and len(field_clean) > 1:
+            clean_fields.append(field_clean)
+            seen.add(field_clean)
+    
+    # Debug info (can be removed in production)
+    print(f"[DEBUG] Extracted {len(clean_fields)} fields: {clean_fields[:5]}..." if clean_fields else "[DEBUG] No fields extracted")
+    
     if image_hash and clean_fields:
         image_cache[image_hash] = clean_fields
         with open(cache_file, "wb") as f:
