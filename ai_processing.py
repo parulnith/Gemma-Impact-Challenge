@@ -6,23 +6,16 @@ application, including form field extraction from images and Hindi audio transcr
 
 Key Functions:
 - extract_fields_from_image(): Extract form field labels from uploaded images
-- transcribe_audio(): Convert Hindi speech to Devanagari text
-- Caching utilities for performance optimization
+- transcribe_audio(): Convert Hindi speech to Devanagari text using Gemma
+- Image caching utilities for performance optimization
 
 AI Models Used:
-- Google Gemma 3n 4B: Vision-language model for image understanding
-- OpenAI Whisper: For audio transcription in Hindi
+- Google Gemma 3n 4B: Vision-language model for image understanding and audio transcription
 
 Performance Features:
-- Hash-based caching for repeated processing
+- Image hash-based caching for repeated form template processing
 - Smart model loading to avoid reloads
 - Progress tracking for long-running operations
-
-Dependencies:
-- torch: PyTorch for model inference
-- PIL: Image processing
-- whisper: OpenAI Whisper for audio transcription
-- transformers: Hugging Face model integration
 """
 
 import hashlib
@@ -31,31 +24,29 @@ import os
 import pickle
 import re
 import time
-from PIL import Image
-import torch
-
-# Audio transcription support
-try:
-    import whisper
-except ImportError:
-    whisper = None  # Handle gracefully if not installed
-
-# Import functions from our modular components
-from model_utils import load_model, get_model, get_processor, get_device
-from config import get_model_config
-
-import re
-import os
-import time
-import json
 import numpy as np
 import soundfile as sf
-import torch
-import pickle
 from PIL import Image
-from config import image_cache, audio_cache, cache_file, audio_cache_file, save_to_csv
+import torch
+
+# Import functions from our modular components
 from model_utils import load_model, get_model, get_processor, get_device, is_model_loaded
-import gradio as gr
+from config import image_cache, cache_file, save_to_csv
+
+# Define global cache for performance optimization (images only)
+cache_file = "cache.pkl"
+image_cache = {}
+
+# Load existing image cache on startup
+if os.path.exists(cache_file):
+    try:
+        with open(cache_file, "rb") as f:
+            cache_data = pickle.load(f)
+            if isinstance(cache_data, dict):
+                image_cache = cache_data.get("image_cache", {})
+    except Exception:
+        # If cache loading fails, start with empty cache
+        image_cache = {}
 
 # Utility functions for caching and data processing
 def get_image_hash(image_path):
@@ -78,32 +69,6 @@ def get_image_hash(image_path):
     """
     try:
         with open(image_path, "rb") as f:
-            content = f.read()
-            return hashlib.md5(content).hexdigest()
-    except Exception:
-        return None
-
-
-def get_audio_hash(audio_path):
-    """
-    Generate MD5 hash for an audio file to enable caching.
-    
-    Creates a unique identifier for audio files based on their content,
-    allowing the system to cache transcription results and avoid reprocessing
-    the same audio multiple times.
-    
-    Args:
-        audio_path (str): Path to the audio file
-        
-    Returns:
-        str or None: MD5 hash of the audio file, or None if file cannot be read
-        
-    Example:
-        hash_val = get_audio_hash("recording.wav")
-        # Returns: "x1y2z3a4b5c6..."
-    """
-    try:
-        with open(audio_path, "rb") as f:
             content = f.read()
             return hashlib.md5(content).hexdigest()
     except Exception:
@@ -238,117 +203,166 @@ def extract_fields_from_image(image_path, progress=None):
         
     return clean_fields
 
-# Generate a hash for audio data (used for caching)
-
-def transcribe_audio(audio_path, fields, progress=None):
+def transcribe_audio(audio_data, fields=None, progress=None):
     """
-    Convert audio responses to text using OpenAI Whisper model.
+    Fast audio transcription using Gemma 3n 4B for STT without caching.
     
-    This function handles Hindi/English audio transcription for form responses,
-    with intelligent caching to improve performance for repeated uploads.
+    This function handles Hindi/English audio transcription using the same Gemma model
+    that's used for image processing, providing consistent AI capabilities across the app.
+    Audio responses are not cached since each form will have unique responses.
     
     Process:
-    1. Validate audio file format and accessibility
-    2. Check cache for previous transcription of same audio
-    3. Load and configure Whisper model for Hindi/English
-    4. Transcribe audio with language detection
-    5. Map transcription to corresponding form fields
-    6. Cache results for future use
+    1. Validate and process audio input (file path or tuple format)
+    2. Normalize and resample audio to target format
+    3. Use Gemma 3n 4B model with audio processing capabilities
+    4. Clean and post-process transcription output
     
     Args:
-        audio_path (str): Path to the uploaded audio file (WAV/MP3/M4A)
-        fields (list): List of form field names to map responses to
+        audio_data: Either audio file path (str) or tuple (sample_rate, audio_array)
+        fields (list, optional): List of form field names (for compatibility, not used in transcription)
         progress (callable, optional): Gradio progress callback for UI updates
         
     Returns:
-        dict: Mapping of field names to transcribed responses
-              Example: {"नाम": "राम कुमार", "आयु": "25", "गाँव": "सरोजनी नगर"}
-              
+        str: Transcribed text in Hindi/English
+        
     Performance:
-        - Cached results: Instant
         - New audio: 10-30 seconds depending on length
+        - No caching to ensure fresh transcription for each form
         
     Raises:
-        Exception: If audio file is invalid, Whisper model fails, or transcription errors occur
-        
-    Technical Notes:
-        - Uses Whisper "base" model for balance of speed and accuracy
-        - Automatically detects Hindi/English language
-        - Handles various audio formats through librosa
-        - Maps responses to fields using simple enumeration
+        Exception: If audio processing fails or Gemma model errors occur
         
     Example:
-        fields = ["नाम", "आयु", "गाँव"]
-        responses = transcribe_audio("recording.wav", fields)
-        # Returns: {"नाम": "राम कुमार", "आयु": "25", "गाँव": "सरोजनी नगर"}
+        transcription = transcribe_audio("recording.wav")
+        # Returns: "नाम राम कुमार आयु पच्चीस गाँव सरोजनी नगर"
     """
-    # Check if Whisper is available
-    if whisper is None:
-        raise Exception("Whisper not installed. Please install with: pip install openai-whisper")
+    if progress:
+        progress(0.05, desc="Starting audio transcription...")
+    
+    # Ensure model is loaded (will skip if already loaded)
+    if not load_model():
+        raise Exception("Failed to load model. Please refresh the page and try again.")
+
+    # Get model components
+    model = get_model()
+    processor = get_processor()
+    device = get_device()
+    
+    if model is None or processor is None:
+        raise Exception("Gemma model or processor not loaded properly.")
+    
+    if audio_data is None:
+        raise Exception("No audio provided.")
+    
+    # Process audio input - handle both file paths and tuple format
+    audio_np_array, sr = (None, None)
+    if isinstance(audio_data, str):
+        # Audio file path
+        try:
+            audio_np_array, sr = sf.read(audio_data)
+        except Exception as e:
+            raise Exception(f"Failed to read audio file: {str(e)}")
+    elif isinstance(audio_data, tuple) and len(audio_data) == 2:
+        # Gradio audio format: (sample_rate, audio_array)
+        sr, audio_np_array = audio_data
+    else:
+        raise Exception("Invalid audio input format.")
+    
+    if audio_np_array is None or len(audio_np_array) == 0:
+        raise Exception("Empty audio data.")
     
     if progress:
-        progress(0.1, desc="Loading audio file...")
+        progress(0.2, desc="Processing audio...")
     
-    # Validate audio file exists and is accessible
-    if not os.path.exists(audio_path):
-        raise Exception("Audio file not found")
+    # Convert stereo to mono if needed
+    if audio_np_array.ndim > 1:
+        audio_np_array = np.mean(audio_np_array, axis=1)
     
-    # Check cache for previous transcription of this audio
-    audio_hash = get_audio_hash(audio_path)
-    if audio_hash in audio_cache:
-        cached_result = audio_cache[audio_hash]
-        if progress:
-            for p in [0.3, 0.6, 0.9, 1.0]:
-                progress(p, desc="Using cached transcription...")
-                time.sleep(0.05)
-        return cached_result
+    # Normalize audio
+    if np.max(np.abs(audio_np_array)) > 0:
+        audio_np_array = audio_np_array / (np.max(np.abs(audio_np_array)) + 1e-9)
     
-    if progress:
-        progress(0.3, desc="Loading Whisper model...")
-    
-    # Load Whisper model for transcription
-    try:
-        model = whisper.load_model("base")  # Balance of speed and accuracy
-    except Exception as e:
-        raise Exception(f"Failed to load Whisper model: {str(e)}")
-    
-    if progress:
-        progress(0.5, desc="Transcribing audio...")
-    
-    # Transcribe audio with automatic language detection
-    try:
-        result = model.transcribe(
-            audio_path,
-            language=None,  # Auto-detect Hindi/English
-            fp16=False,     # Disable FP16 for compatibility
-            verbose=False   # Suppress detailed output
+    # Resample to target sample rate (16kHz for optimal processing)
+    target_sr = 16000
+    if sr != target_sr:
+        ratio = target_sr / sr
+        new_length = int(len(audio_np_array) * ratio)
+        audio_np_array = np.interp(
+            np.linspace(0, len(audio_np_array), new_length),
+            np.arange(len(audio_np_array)),
+            audio_np_array
         )
-        transcription = result["text"].strip()
+        sr = target_sr
+    
+    # Prepare prompt and messages for Gemma audio processing
+    prompt = "Transcribe this audio in Hindi (Devanagari script)."
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "audio", "audio": audio_np_array},
+                {"type": "text", "text": prompt}
+            ]
+        }
+    ]
+    
+    if progress:
+        progress(0.4, desc="Tokenizing audio and prompt...")
+    
+    # Process audio and text through Gemma
+    try:
+        input_dict = processor.apply_chat_template(
+            messages,
+            add_generation_prompt=True,
+            tokenize=True,
+            return_dict=True,
+            return_tensors="pt",
+            sampling_rate=sr
+        )
+        final_inputs_for_model = {k: v.to(model.device) for k, v in input_dict.items()}
     except Exception as e:
-        raise Exception(f"Failed to transcribe audio: {str(e)}")
+        raise Exception(f"Failed to process audio with Gemma: {str(e)}")
     
     if progress:
-        progress(0.8, desc="Processing responses...")
+        progress(0.6, desc="Generating transcription...")
     
-    # Split transcription into individual responses
-    # Simple approach: split by periods or natural pauses
-    responses = [resp.strip() for resp in transcription.split('.') if resp.strip()]
-    
-    # Map responses to form fields in order
-    field_responses = {}
-    for i, field in enumerate(fields):
-        if i < len(responses):
-            field_responses[field] = responses[i]
-        else:
-            field_responses[field] = ""  # Empty if no corresponding response
-    
-    # Cache the result for future use
-    if audio_hash:
-        audio_cache[audio_hash] = field_responses
-        with open(cache_file, "wb") as f:
-            pickle.dump({"image_cache": image_cache, "audio_cache": audio_cache}, f)
+    # Generate transcription using Gemma 3n 4B
+    with torch.inference_mode():
+        predicted_ids = model.generate(
+            **final_inputs_for_model,
+            max_new_tokens=64,  # Sufficient for typical form responses
+            do_sample=False,
+            num_beams=1,
+            temperature=0.1,
+            repetition_penalty=1.1
+        )
     
     if progress:
-        progress(1.0, desc="Transcription complete")
+        progress(0.9, desc="Decoding transcription...")
     
-    return field_responses
+    # Decode the transcription
+    transcription = processor.batch_decode(
+        predicted_ids,
+        skip_special_tokens=True
+    )[0].strip()
+    
+    # Clean up the transcription output
+    # Remove any model/user tokens
+    transcription = re.sub(r'\b(user|model)\s*[:：\-]+', '', transcription, flags=re.IGNORECASE)
+    transcription = re.sub(r'\b(user|model)\b', '', transcription, flags=re.IGNORECASE)
+    
+    # Remove the prompt text from output
+    prompt_text = "Transcribe this audio in Hindi (Devanagari script)."
+    transcription = transcription.replace(prompt_text, '')
+    
+    # Clean up whitespace and punctuation
+    transcription = transcription.strip(' :\n\t-')
+    
+    # Handle empty or unclear transcription
+    if not transcription or transcription.strip() == "":
+        transcription = "Audio not clear."
+    
+    if progress:
+        progress(1.0, desc="Transcription complete!")
+    
+    return transcription
