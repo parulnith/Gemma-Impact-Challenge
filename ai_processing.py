@@ -160,7 +160,7 @@ def extract_fields_from_image(image_path, progress=None):
     with torch.no_grad():
         outputs = model.generate(
             **inputs,
-            max_new_tokens=256,        # Increased limit for more comprehensive extraction
+            max_new_tokens=512,        # Significantly increased for comprehensive extraction (20-30+ fields)
             do_sample=False,           # Deterministic output
             num_beams=1,              # Single beam for speed
             repetition_penalty=1.1,   # Prevent repetitive output
