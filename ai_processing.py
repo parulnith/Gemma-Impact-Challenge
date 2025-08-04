@@ -162,10 +162,7 @@ def extract_fields_from_image(image_path, progress=None):
             max_new_tokens=128,        # Limit output length for efficiency
             do_sample=False,           # Deterministic output
             num_beams=1,              # Single beam for speed
-            temperature=0.1,          # Low temperature for consistency
             repetition_penalty=1.1,   # Prevent repetitive output
-            length_penalty=1.0,
-            early_stopping=True,
             pad_token_id=processor.tokenizer.eos_token_id
         )
     
@@ -333,7 +330,6 @@ def transcribe_audio(audio_data, fields=None, progress=None):
             max_new_tokens=64,  # Sufficient for typical form responses
             do_sample=False,
             num_beams=1,
-            temperature=0.1,
             repetition_penalty=1.1
         )
     
