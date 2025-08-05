@@ -1,4 +1,4 @@
-# ASHA - G: On Device Multimodal Digitisation Agent(Gemma 3n Powered)
+# ASHA-G: On Device Multimodal Digitisation Agent(Gemma 3n Powered)
 
 **Empowering ASHA workers with AI for seamless form digitization and Hindi voice transcription**
 
