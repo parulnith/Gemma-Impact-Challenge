@@ -25,7 +25,7 @@ This project leverages **Google's Gemma 3n 4B model** to create an AI-powered so
 
 Gemma 3n powers the entire pipeline, from image to structured data, from voice to text, and across languages.**
 
-**🔗 Submission Links:**
+## 🔗 Submission Links
 
 - 📄 **Writeup:** [View Writeup](https://www.kaggle.com/competitions/google-gemma-3n-hackathon/writeups/ai-in-rural-india-digitizing-health-records-for-as) 
 - 🎥 **Demo Video:** [Watch Video](#) 
