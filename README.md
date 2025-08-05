@@ -1,4 +1,4 @@
-# On Device smart ASHA Forms(Gemma 3n Powered)
+# ASHA - G: On Device Multimodal Digitisation Agent(Gemma 3n Powered)
 
 **Empowering ASHA workers with AI for seamless form digitization and Hindi voice transcription**
 
@@ -23,20 +23,13 @@ This project leverages **Google's Gemma 3n 4B model** to create an AI-powered so
 6. **Real-World Impact**: Directly addresses challenges faced by ASHA workers, healthcare admins, and researchers in rural India.
 7. **Scalable, Modular Design**: Built for easy extension and adaptation to new forms, languages, and use cases.
 
-> **Gemma 3n powers the entire pipeline: from image to structured data, from voice to text, and across languages.**
-
----
-
-**🔗 Submission Links for Judges:**
-
-
----
+Gemma 3n powers the entire pipeline, from image to structured data, from voice to text, and across languages.**
 
 **🔗 Submission Links:**
 
-- 📄 **Writeup:** [View Writeup](#) <!-- Replace # with your writeup link -->
-- 🎥 **Demo Video:** [Watch Video](#) <!-- Replace # with your video link -->
-- 🚀 **Live Demo:** [Try the Application](https://huggingface.co/spaces/ParulPandey/demo)
+- 📄 **Writeup:** [View Writeup](https://www.kaggle.com/competitions/google-gemma-3n-hackathon/writeups/ai-in-rural-india-digitizing-health-records-for-as) 
+- 🎥 **Demo Video:** [Watch Video](#) 
+- 🚀 **Live Demo:** [Try the Application]([https://huggingface.co/spaces/ParulPandey/demo](https://huggingface.co/spaces/ParulPandey/Smart_Asha_Form))
 
 ---
 ### 🎯 Key Features
