@@ -29,7 +29,7 @@ Gemma 3n powers the entire pipeline, from image to structured data, from voice t
 
 - 📄 **Writeup:** [View Writeup](https://www.kaggle.com/competitions/google-gemma-3n-hackathon/writeups/ai-in-rural-india-digitizing-health-records-for-as) 
 - 🎥 **Demo Video:** [Watch Video](https://www.youtube.com/watch?v=m6VapEXslz8) 
-- 🚀 **Live Demo:** [Try the Application]([https://huggingface.co/spaces/ParulPandey/demo](https://huggingface.co/spaces/ParulPandey/Smart_Asha_Form))
+- 🚀 **Live Demo:** [Try the Application](https://huggingface.co/spaces/ParulPandey/Smart_Asha_Form)
 
 ---
 ### 🎯 Key Features
